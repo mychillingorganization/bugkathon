@@ -8,12 +8,20 @@ function Navbar() {
     const [user, setUser] = useState(null);
 
     useEffect(() => {
-        const stored = localStorage.getItem('current_user');
-        if (stored) {
-            try {
-                setUser(JSON.parse(stored));
-            } catch (e) { }
-        }
+        const updateState = () => {
+            const stored = localStorage.getItem('current_user');
+            if (stored) {
+                try {
+                    setUser(JSON.parse(stored));
+                } catch (e) { }
+            } else {
+                setUser(null);
+            }
+        };
+
+        updateState();
+        window.addEventListener('authStateChanged', updateState);
+        return () => window.removeEventListener('authStateChanged', updateState);
     }, []);
 
     return (

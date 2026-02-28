@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Stage, Layer, Rect, Text, Transformer, Circle, RegularPolygon, Star, Line as KonvaLine, Image as KonvaImage } from 'react-konva';
 import useImage from 'use-image';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_TEMPLATE_VARIABLES, STORAGE_KEYS } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_TEMPLATE_VARIABLES } from '../constants';
+import { TemplatesAPI, EventsAPI } from '../config/api';
 import './CreatePage.css';
 
 // Custom Image Component to handle useImage hook cleanly inside the Konva Stage
@@ -167,48 +168,51 @@ const CreatePage = () => {
 
     useEffect(() => {
         if (templateId && templateId !== loadedId) {
-            try {
-                const stored = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-                if (stored && stored !== '[]') {
-                    const templates = JSON.parse(stored);
-                    const t = templates.find(temp => temp.id === Number(templateId));
+            const loadTemplate = async () => {
+                try {
+                    const res = await TemplatesAPI.getById(templateId);
+                    const t = res.data;
                     if (t) {
-                        setDesignName(t.title);
-                        if (t.elements && t.elements.length > 0) {
-                            setElements(t.elements);
-                        }
+                        setDesignName(t.name);
+                        try {
+                            const parsedEls = JSON.parse(t.svg_content || '[]');
+                            if (parsedEls && parsedEls.length > 0) setElements(parsedEls);
+                        } catch (e) { console.error("Could not parse elements"); }
                         if (t.variables) {
                             setTemplateVars(t.variables);
                         }
                     }
+                } catch (error) {
+                    console.error('Error loading template:', error);
+                    alert('Failed to load template. Please try again.');
                 }
-            } catch (error) {
-                console.error('Error loading template:', error);
-                alert('Failed to load template. Please try again.');
-            }
+            };
+            loadTemplate();
             setLoadedId(templateId);
         }
     }, [templateId, loadedId, setElements]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         try {
-            const stored = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-            let templates = stored && stored !== '[]' ? JSON.parse(stored) : [];
             if (templateId) {
-                templates = templates.map(t => t.id === Number(templateId) ? { ...t, title: designName, elements, variables: templateVars, lastEdited: 'Just now' } : t);
+                await TemplatesAPI.update(templateId, {
+                    name: designName,
+                    variables: templateVars,
+                    svg_content: JSON.stringify(elements)
+                });
+                alert('Template updated successfully!');
             } else {
-                const newTpl = {
-                    id: Date.now(),
-                    title: designName,
-                    lastEdited: 'Just now',
-                    elements,
-                    variables: templateVars
-                };
-                templates = [newTpl, ...templates];
-                navigate(`/create?id=${newTpl.id}`, { replace: true });
+                const eventId = await EventsAPI.getDefaultEvent();
+                if (!eventId) throw new Error("Could not ensure Default Event");
+                const res = await TemplatesAPI.create({
+                    event_id: eventId,
+                    name: designName,
+                    variables: templateVars,
+                    svg_content: JSON.stringify(elements)
+                });
+                alert('Template saved successfully!');
+                navigate(`/create?id=${res.data.id}`, { replace: true });
             }
-            localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
-            alert('Template saved successfully!');
         } catch (error) {
             console.error('Error saving template:', error);
             alert('Failed to save template. Please try again.');

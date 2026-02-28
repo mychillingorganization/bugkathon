@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { VALIDATION } from '../constants';
-import authService from '../services/authService';
+import { AuthAPI } from '../config/api';
 import './LoginPage.css';
 /* Small Bugkathon logo */
 const BugkathonLogoSmall = () => (
@@ -14,37 +14,26 @@ function LoginPage() {
     const [password, setPassword] = useState('');
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-    const handleGoogleSignIn = async () => {
-        setIsGoogleLoading(true);
-        // Simulate OAuth Redirect Delay
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        // Mock Google User Object
-        const mockGoogleUser = {
-            id: 'google_oauth_987654321',
-            name: 'Google User',
-            email: 'google.user@gmail.com',
-            authProvider: 'google',
-            created_at: new Date().toISOString(),
-            role: 'Student'
-        };
-
-        // Auto-register them in local storage mock DB if they don't exist
-        const existingUsersStr = localStorage.getItem('mock_users');
-        let mockUsers = existingUsersStr ? JSON.parse(existingUsersStr) : [];
-        if (!mockUsers.find(u => u.email === mockGoogleUser.email)) {
-            mockUsers.push(mockGoogleUser);
-            localStorage.setItem('mock_users', JSON.stringify(mockUsers));
-        }
-
-        // Sign them in
-        localStorage.setItem('current_user', JSON.stringify(mockGoogleUser));
-        navigate('/templates');
+    const handleGoogleSignIn = () => {
+        // Will be replaced with real OAuth redirect shortly
+        window.location.href = `${process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000'}/api/v1/auth/google/login`;
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log('Login:', { email, password });
+        try {
+            await AuthAPI.login({ email, password });
+
+            // Fetch profile and store
+            const profileRes = await AuthAPI.getProfile();
+            localStorage.setItem('current_user', JSON.stringify(profileRes.data));
+            window.dispatchEvent(new Event('authStateChanged'));
+
+            navigate('/templates');
+        } catch (error) {
+            const msg = error.response?.data?.detail || 'Login failed.';
+            alert(msg);
+        }
     };
 
     return (

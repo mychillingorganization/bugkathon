@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './ProfilePage.css';
+import { AuthAPI } from '../config/api';
 
 const ProfilePage = () => {
     const navigate = useNavigate();
@@ -41,8 +42,14 @@ const ProfilePage = () => {
         navigate(-1);
     };
 
-    const handleSignOut = () => {
+    const handleSignOut = async () => {
+        try {
+            await AuthAPI.logout();
+        } catch (e) {
+            console.error('Logout failed on server');
+        }
         localStorage.removeItem('current_user');
+        window.dispatchEvent(new Event('authStateChanged'));
         navigate('/');
     };
 
@@ -69,18 +76,6 @@ const ProfilePage = () => {
             }
             */
             // ---------------------------------------
-
-            // Remove from mock_users
-            const mockUsersStr = localStorage.getItem('mock_users');
-            if (mockUsersStr) {
-                try {
-                    let mockUsers = JSON.parse(mockUsersStr);
-                    mockUsers = mockUsers.filter(u => u.email !== user.email);
-                    localStorage.setItem('mock_users', JSON.stringify(mockUsers));
-                } catch (e) {
-                    console.error('Error updating mock_users:', e);
-                }
-            }
 
             // Sign out
             handleSignOut();

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import authService from '../services/authService';
+import { AuthAPI } from '../config/api';
 import './RegisterPage.css';
 /* Small Bugkathon logo */
 const BugkathonLogoSmall = () => (
@@ -19,15 +19,14 @@ function RegisterPage() {
             return;
         }
         try {
-            await authService.register({
+            await AuthAPI.register({
                 email,
                 name: fullName,
                 password,
-                role: 'MEMBER',
             });
             navigate('/login');
         } catch (error) {
-            const message = error.response?.data?.detail || 'Đăng ký thất bại.';
+            const message = error.response?.data?.detail || 'Registration failed.';
             alert(message);
         }
     };

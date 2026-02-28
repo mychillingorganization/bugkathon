@@ -8,7 +8,8 @@ import { saveAs } from 'file-saver';
 import ProfileIcon from '../components/ProfileIcon';
 import { Stage, Layer, Rect, Text, Transformer, Circle, RegularPolygon, Star, Line as KonvaLine, Image as KonvaImage } from 'react-konva';
 import useImage from 'use-image';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_TEMPLATE_VARIABLES, STORAGE_KEYS } from '../constants';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, DEFAULT_TEMPLATE_VARIABLES } from '../constants';
+import { TemplatesAPI, GenerationAPI } from '../config/api';
 import './GeneratorPage.css';
 
 const TEMPLATE_VARIABLES = DEFAULT_TEMPLATE_VARIABLES;
@@ -54,17 +55,28 @@ const GeneratorPage = () => {
     };
 
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-            if (stored && stored !== '[]') {
-                const parsed = JSON.parse(stored);
-                setTemplates(parsed);
-                if (parsed.length > 0) setSelectedTemplate(parsed[0]);
+        const fetchTemplates = async () => {
+            try {
+                const res = await TemplatesAPI.getAll();
+                const mappedTemplates = res.data.map(t => {
+                    let parsedElements = [];
+                    try { parsedElements = JSON.parse(t.svg_content || '[]'); } catch (e) { }
+                    return {
+                        id: t.id,
+                        title: t.name,
+                        lastEdited: t.created_at ? new Date(t.created_at).toLocaleDateString() : 'Unknown',
+                        variables: t.variables || [],
+                        elements: parsedElements
+                    };
+                });
+                setTemplates(mappedTemplates);
+                if (mappedTemplates.length > 0) setSelectedTemplate(mappedTemplates[0]);
+            } catch (error) {
+                console.error('Error fetching templates:', error);
+                setTemplates([]);
             }
-        } catch (error) {
-            console.error('Error loading templates:', error);
-            setTemplates([]);
-        }
+        };
+        fetchTemplates();
     }, []);
 
     const [logs, setLogs] = useState([]);
@@ -175,28 +187,59 @@ const GeneratorPage = () => {
         setMappings(prev => ({ ...prev, [variable]: column }));
     };
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
+        if (!selectedTemplate) {
+            alert('Please select a template first.');
+            return;
+        }
+        if (!sheetsUrl || !sheetsUrl.includes('docs.google.com/spreadsheets/d/')) {
+            if (sheetData.length > 0) {
+                alert('Backend generation currently requires a public Google Sheets link. Local CSV uploads are only for live preview.');
+            } else {
+                alert('Please provide a valid Google Sheets link.');
+            }
+            return;
+        }
+
         setIsGenerating(true);
         setProgress(0);
         setLogs([]);
-        addLog('Initializing GDGoC Asset Generator...');
+        addLog('Initializing GDGoC Asset Generator on Backend...');
 
-        setTimeout(() => addLog('Fetching data from Google Sheets...'), 800);
-        setTimeout(() => addLog('Loading template SVG...'), 1600);
-        setTimeout(() => addLog(`Processing ${sheetData.length || 50} records...`), 2400);
+        try {
+            const res = await GenerationAPI.generate({
+                template_id: selectedTemplate.id,
+                google_sheet_url: sheetsUrl
+                // drive_folder_id: execOptions.drive ? "some_id" : null
+            });
 
-        let p = 0;
-        const interval = setInterval(() => {
-            p += Math.random() * 8 + 2;
-            if (p >= 100) {
-                p = 100;
-                clearInterval(interval);
-                addLog('Generating PDFs... Done');
-                addLog('Ready for generation.');
-                setTimeout(() => setIsGenerating(false), 1000);
-            }
-            setProgress(Math.min(p, 100));
-        }, 150);
+            const logId = res.data.id;
+            addLog(`Generation Job Started. ID: ${logId}`);
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await GenerationAPI.getStatus(logId);
+                    const { status, processed, total_records, progress_percent } = statusRes.data;
+
+                    setProgress(progress_percent || 0);
+                    addLog(`Status: ${status} | Processed: ${processed}/${total_records} (${progress_percent}%)`);
+
+                    if (status === 'COMPLETED' || status === 'FAILED') {
+                        clearInterval(pollInterval);
+                        addLog(`Generation finished with status: ${status}.`);
+                        setTimeout(() => setIsGenerating(false), 2000);
+                    }
+                } catch (e) {
+                    console.error('Polling error', e);
+                    addLog('Error fetching status update.');
+                }
+            }, 2500);
+
+        } catch (e) {
+            console.error(e);
+            addLog(`Error starting generation: ${e.response?.data?.detail || e.message}`);
+            setIsGenerating(false);
+        }
     };
 
     return (
